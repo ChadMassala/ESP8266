@@ -1,6 +1,7 @@
 #include "config.h"
 #include "TimeStamp.h"
- 
+#include "mqttConnect.h"
+
 
 #define RX_PIN D2        // GPIO4, connect to module's SDA (TX)
 #define SYNC_BYTE 0xAA   // Sync byte
@@ -33,7 +34,7 @@ void setup() {
   softSerial.begin(115200);     // Initialize Software Serial at 115200 baud rate
 
   connectToWiFi();              // Connect to Wi-Fi
-
+  connectToMQTT();
     // Initialize NTP client
   
   Serial.println("Listening for software UART data...");
@@ -91,14 +92,25 @@ void loop() {
   }
   Serial.println();
 
+
+  String payload =   DateTimes + " Emulated LEB128 Decoded Values: ";
+  for (int i = 0; i < 12; i++) {
+    uint32_t value = 0;
+    emulateDecodeLEB128(buffer, index, bufferSize, value);
+    payload += String(value) + " ";
+
+
+  }
+ payload += "}"; // Close the JSON object
+  Serial.println(payload);         // Print data to Serial Monitor
+  publishToMQTT(payload);          // Publish data to MQTT broker
+
   delay(2000); // Wait for 2 seconds before running again
 
 }
 
 
-
-
-
+ 
 void emulateDecodeLEB128(uint8_t* buffer, size_t& index, size_t maxLen, uint32_t& value) {
   value = 0;
   uint8_t shift = 0;
