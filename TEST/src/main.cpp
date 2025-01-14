@@ -1,11 +1,16 @@
 #include "config.h"
-
+#include "TimeStamp.h"
+ 
 
 #define RX_PIN D2        // GPIO4, connect to module's SDA (TX)
 #define SYNC_BYTE 0xAA   // Sync byte
 #define MAX_BYTES 64     // Maximum bytes to read
 
 SoftwareSerial softSerial(RX_PIN, -1);
+
+// Variables to save date and time
+void emulateDecodeLEB128(uint8_t* buffer, size_t& index, size_t maxLen, uint32_t& value);
+
 
 // Function to decode LEB128 values
 uint32_t decodeLEB128(uint8_t* buffer, size_t& index, size_t maxLen) {
@@ -28,10 +33,16 @@ void setup() {
   softSerial.begin(115200);     // Initialize Software Serial at 115200 baud rate
 
   connectToWiFi();              // Connect to Wi-Fi
+
+    // Initialize NTP client
+  
   Serial.println("Listening for software UART data...");
 }
 
 void loop() {
+  
+  String DateTimes = timeStamps();
+
   if (softSerial.available()) {
     uint8_t buffer[MAX_BYTES];
     size_t len = softSerial.readBytes(buffer, MAX_BYTES);
@@ -44,13 +55,13 @@ void loop() {
         if (index >= len) break;
 
         uint8_t length = buffer[index++]; // Number of LEB128 variables
-
+        
         Serial.print("Decoded LEB128 Data: ");
+        Serial.printf("[%s] ", DateTimes.c_str()); // Print the timestamp first
         for (uint8_t j = 0; j < length; j++) {
           if (index >= len) break;
 
           uint32_t value = decodeLEB128(buffer, index, len);
-
           // Ensure at least 5 digits
           if (j != 10) {               // 5 digits for all except 11th variable
             Serial.printf("%05u ", value);
@@ -63,4 +74,47 @@ void loop() {
       }
     }
   }
+  
+
+ 
+
+  const size_t bufferSize = 64;
+  uint8_t buffer[bufferSize];
+  size_t index = 0;
+
+  Serial.print("Decoded LEB128 Data: ");
+  Serial.printf("%s ", DateTimes.c_str()); // Print the timestamp first
+  for (int i = 0; i < 12; i++) {
+    uint32_t value = 0;
+    emulateDecodeLEB128(buffer, index, bufferSize, value);
+    Serial.printf("%05u ", value); // Print each emulated 32-bit integer
+  }
+  Serial.println();
+
+  delay(2000); // Wait for 2 seconds before running again
+
 }
+
+
+
+
+
+void emulateDecodeLEB128(uint8_t* buffer, size_t& index, size_t maxLen, uint32_t& value) {
+  value = 0;
+  uint8_t shift = 0;
+
+  while (index < maxLen) {
+    uint8_t byte = random(0, 128); // Generate a random byte (0-127)
+    if (random(0, 2) == 0) {       // Randomly decide if it's the last byte
+      byte |= 0x80;
+    }
+    buffer[index++] = byte;        // Store it in the buffer
+    value |= (byte & 0x7F) << shift;
+    shift += 7;
+
+    if ((byte & 0x80) == 0) break; // Stop if it's the last byte
+  }
+}
+
+
+
