@@ -27,7 +27,7 @@ void setup() {
   Serial.begin(115200);         // Initialize debug Serial Monitor
   softSerial.begin(115200);     // Initialize Software Serial at 115200 baud rate
 
-  //connectToWiFi();              // Connect to Wi-Fi
+  connectToWiFi();              // Connect to Wi-Fi
   Serial.println("Listening for software UART data...");
 }
 
