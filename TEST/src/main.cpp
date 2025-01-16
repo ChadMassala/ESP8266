@@ -9,8 +9,6 @@
 
 SoftwareSerial softSerial(RX_PIN, -1);
 
-// Variables to save date and time
-void emulateDecodeLEB128(uint8_t* buffer, size_t& index, size_t maxLen, uint32_t& value);
 
 
 // Function to decode LEB128 values
@@ -42,15 +40,19 @@ void setup() {
 
 void loop() {
   
-  String DateTimes = timeStamps();
-
+  String DateTimes = timeStamps();  // Get the timestamp
+    // Define an array of names for the values
+  const char* valueNames[] = {"Temperature", "Humidity", "Pressure", "Light", 
+                              "CO2", "VOC", "Sound", "Motion", "Battery", 
+                              "Signal", "Debounce", "CheckSum"};
+  const size_t numNames = sizeof(valueNames) / sizeof(valueNames[0]);
   if (softSerial.available()) {
     uint8_t buffer[MAX_BYTES];
     size_t len = softSerial.readBytes(buffer, MAX_BYTES);
 
     // Process received data
     for (size_t i = 0; i < len; i++) {
-      if (buffer[i] == SYNC_BYTE) { // Check for the sync byte
+      if (buffer[i] == SYNC_BYTE) {  // Check for the sync byte
         size_t index = i + 1;       // Start after sync byte
 
         if (index >= len) break;
@@ -59,74 +61,36 @@ void loop() {
         
         Serial.print("Decoded LEB128 Data: ");
         Serial.printf("[%s] ", DateTimes.c_str()); // Print the timestamp first
-        for (uint8_t j = 0; j < length; j++) {
+        Serial.println();
+        Serial.println("----------------------------------------------------------------");
+
+        for (uint8_t j = 0; j < length && j < numNames; j++) {
           if (index >= len) break;
 
           uint32_t value = decodeLEB128(buffer, index, len);
           // Ensure at least 5 digits
-          if (j != 10) {               // 5 digits for all except 11th variable
-            Serial.printf("%05u ", value);
-          } else {                      // No leading zeros for 11th variable
-            Serial.printf("%u ", value);
-          }
+          // if (j != 10) {  // 5 digits for all except 11th variable
+          //   Serial.printf("%05u ", value);
+          // } else {  // No leading zeros for 11th variable
+          //   Serial.printf("%u ", value);
+          // }
+           // Use the corresponding name for the value
+          String name = valueNames[j];
+
+          // Construct the subtopic for each named value
+          String subtopic = "sensor/data/" + name;
+          String subtopic1 = "value" + String(j + 1);
+
+          // Publish the value to the MQTT broker under the subtopic
+          publishToMQTT(subtopic, String(value));
+
+          // Debugging information for the terminal
+          Serial.printf("%s: %u\n", subtopic1.c_str(), value);
         }
-        Serial.println();
-        break; // Process one packet at a time
+        break;  // Process one packet at a time
       }
     }
   }
   
-
- 
-
-  const size_t bufferSize = 64;
-  uint8_t buffer[bufferSize];
-  size_t index = 0;
-
-  Serial.print("Decoded LEB128 Data: ");
-  Serial.printf("%s ", DateTimes.c_str()); // Print the timestamp first
-  for (int i = 0; i < 12; i++) {
-    uint32_t value = 0;
-    emulateDecodeLEB128(buffer, index, bufferSize, value);
-    Serial.printf("%05u ", value); // Print each emulated 32-bit integer
-  }
-  Serial.println();
-
-
-  String payload =   DateTimes + " Emulated LEB128 Decoded Values: ";
-  for (int i = 0; i < 12; i++) {
-    uint32_t value = 0;
-    emulateDecodeLEB128(buffer, index, bufferSize, value);
-    payload += String(value) + " ";
-
-
-  }
- payload += "}"; // Close the JSON object
-  Serial.println(payload);         // Print data to Serial Monitor
-  publishToMQTT(payload);          // Publish data to MQTT broker
-
-  delay(2000); // Wait for 2 seconds before running again
-
+  delay(200); // Wait for 1 second before running again
 }
-
-
- 
-void emulateDecodeLEB128(uint8_t* buffer, size_t& index, size_t maxLen, uint32_t& value) {
-  value = 0;
-  uint8_t shift = 0;
-
-  while (index < maxLen) {
-    uint8_t byte = random(0, 128); // Generate a random byte (0-127)
-    if (random(0, 2) == 0) {       // Randomly decide if it's the last byte
-      byte |= 0x80;
-    }
-    buffer[index++] = byte;        // Store it in the buffer
-    value |= (byte & 0x7F) << shift;
-    shift += 7;
-
-    if ((byte & 0x80) == 0) break; // Stop if it's the last byte
-  }
-}
-
-
-

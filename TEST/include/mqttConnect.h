@@ -4,7 +4,7 @@
 
 #include "Arduino.h"
 
-void publishToMQTT(String data);
+void publishToMQTT(String topic, String data);
 void connectToMQTT();
 
 

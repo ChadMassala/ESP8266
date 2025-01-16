@@ -12,7 +12,7 @@ const int MQTT_PORT = 1883;
 const char *mqtt_user = "Chad";
 const char *mqtt_password = "massala";
 const char *mqtt_client_id = "cmteqESP";
-const char *TOPIC = "Serial/node1/";
+const char *topic = "Serial/node1/";
 
 WiFiClient client;
 PubSubClient mqttClient(client);
@@ -36,13 +36,13 @@ void connectToMQTT() {
 
 
 // Publish data to MQTT
-void publishToMQTT(String data) {
+void publishToMQTT(String topic, String data) {
 
 
   if (!mqttClient.connected()) {
     connectToMQTT();
   }
-  mqttClient.publish(TOPIC, data.c_str());
+  mqttClient.publish(topic.c_str(), data.c_str());
 }
 
 
