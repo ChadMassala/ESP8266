@@ -2,6 +2,7 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
+#include "TaskScheduler.h"
 
 // const char *WIFI_SSID = "AZ-LightBridge";
 // const char *WIFI_PASSWORD = "azq#2019*Light";
@@ -22,6 +23,8 @@ const char *TOPIC = "CMTEQ/BATT/";
 // IPAddress gateway(172, 17, 4, 1);
 
 // IPAddress subnet(255, 255, 0, 0);
+void connectWiFi();
+void mqttConnect();
 
 String un1, un2, un3;
 String readString;
@@ -39,12 +42,6 @@ PubSubClient mqttClient(client);
 
 void callback(char *topic, byte *payload, unsigned int length) {
   payload[length] = '\0';
-  // int value = String((char *)payload).toInt();
-  // if (value == 0) {
-  //   String value = String((char *)payload);
-  //   Serial.println(value);
-  // }
-
   String strTopic = String(topic);
   int lastForwardSlash = strTopic.lastIndexOf('/');
   String strSubTopic = strTopic.substring(lastForwardSlash + 1, strTopic.length());
@@ -61,48 +58,41 @@ void callback(char *topic, byte *payload, unsigned int length) {
     //value = 0;
     Serial.println(strSubTopic + ":" + value);
   }
-
-
   //Serial.println(topic);
 }
 
 void setup() {
   Serial.begin(115200);
-
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
   pinMode(relay, OUTPUT);
   pinMode(LED, OUTPUT);
-  Serial.println("Connected to Wi-Fi");
-
-  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-  mqttClient.setCallback(callback);
-
-  while (!client.connected()) {
-    if (mqttClient.connect(mqtt_client_id), mqtt_user, mqtt_password) {
-      Serial.println("Connected to MQTT broker");
-    } else {
-      Serial.println("Failed with state ");
-      Serial.println(mqttClient.state());
-      delay(2000);
-    }
-  }
-
-  mqttClient.subscribe(TOPIC);
+  connectWiFi();
   ArduinoOTA.begin();
 }
 
 void loop() {
+  // Ensure Wi-Fi is connected
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi connection lost, reconnecting...");
+    connectWiFi();
+  }
+
+  // Ensure MQTT is connected
+  if (!mqttClient.connected()) {
+    Serial.println("MQTT connection lost, reconnecting...");
+    mqttConnect();
+  }
+
+  // Keep the MQTT connection alive
+  mqttClient.loop();
+
+
   ArduinoOTA.handle();
   mqttClient.loop();
 
   if (flagEnableRelay1) {
     digitalWrite(relay, HIGH);
     Serial.println("ON");
-  } else if (!flagEnableRelay1) {
+    }else if (!flagEnableRelay1) {
     digitalWrite(relay, LOW);
     Serial.println("OFF");
   }
@@ -111,6 +101,7 @@ void loop() {
   // val++;
   // snprintf(msg, 50, " %d", val);
   // mqttClient.publish("CMTEQ/BATT/Voltage ", msg);
+
 
   if (Serial.available() > 0) {
     String uno = Serial.readStringUntil('\n');
@@ -135,4 +126,33 @@ void loop() {
   delay(500);
   digitalWrite(LED, LOW);
   delay(500);
+}
+
+
+void connectWiFi(){
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(300);
+    Serial.print(".");
+  }
+  Serial.println("Connected to Wi-Fi");
+  mqttConnect();
+} 
+
+
+void mqttConnect(){
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCallback(callback);
+
+  while (!client.connected()) {
+    if (mqttClient.connect(mqtt_client_id)) {
+      Serial.println("Connected to MQTT broker");
+    } else {
+      Serial.println("Failed with state ");
+      Serial.println(mqttClient.state());
+      delay(2000);
+    }
+  }
+  ESP.wdtFeed(); // "Feed" the watchdog to prevent reset
+  mqttClient.subscribe(TOPIC);
 }
