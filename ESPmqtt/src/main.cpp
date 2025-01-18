@@ -70,6 +70,11 @@ void loop() {
     char uno[50];
     Serial.readBytesUntil('\n', uno, sizeof(uno));
     uno[sizeof(uno)-1] = '\0'; //Ensure null termination
+    
+     // Clear all buffers to avoid residual data
+    memset(un1, 0, sizeof(un1));
+    memset(un2, 0, sizeof(un2));
+    memset(un3, 0, sizeof(un3));
 
    // Parse the input string
     if (sscanf(uno, "%9[^,],%9[^,],%9s", un1, un2, un3) == 3) {

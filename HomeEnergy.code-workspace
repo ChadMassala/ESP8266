@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "ESPmqtt"
+		},
+		{
+			"path": "SmartBatteryCharger"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"string": "cpp"
+		}
+	}
+}
