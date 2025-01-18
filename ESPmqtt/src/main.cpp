@@ -1,8 +1,5 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <PubSubClient.h>
-#include <ArduinoOTA.h>
-#include "TaskScheduler.h"
+#include "main.h"
 
 //+++++++++++++++++++++++++++++++++++++++++++++++
 const char *WIFI_SSID = ".NET";
@@ -20,16 +17,15 @@ void mqttConnect();
 void callback(char *topic, byte *payload, unsigned int length);
 
 
-String un1, un2, un3;
-String readString;
-String POW;
+char un1[10], un2[10], un3[10];
+float power = 0.0;
+
 int val = 0;
 char msg1[50];
 
-#define relay 4
-#define LED 2
 bool flagEnableRelay1 = false;
-//int value = 0;
+static unsigned long lastBlinkTime = 0;
+static bool ledState = false;
 
 WiFiClient client;
 PubSubClient mqttClient(client);
@@ -41,8 +37,8 @@ PubSubClient mqttClient(client);
 //========================== 
 void setup() {
   Serial.begin(115200);
-  pinMode(relay, OUTPUT);
-  pinMode(LED, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT); 
   connectWiFi();
   ArduinoOTA.begin();
 }
@@ -71,29 +67,34 @@ void loop() {
   mqttClient.loop();
 
   if (Serial.available() > 0) {
-    String uno = Serial.readStringUntil('\n');
-    int comma1 = uno.indexOf(',');    //12.82,-0.42,1, comma is at 6 and 
-    int comma2 = uno.indexOf(',', comma1+1);    //12.82,-0.42,1, comma is at 6 and 
-    un1 = uno.substring(0, comma1);  // 
-    un2 = uno.substring(comma1 + 1, comma2);  //7 means we stop at 2. 7 means we start at -
-    un3 = uno.substring(comma2 + 1); // comma1 is at 6, 12 means we stop after 1, 12 means we start after 0.42,
-    POW = un1.toFloat()*un2.toFloat();
+    char uno[50];
+    Serial.readBytesUntil('\n', uno, sizeof(uno));
+    uno[sizeof(uno)-1] = '\0'; //Ensure null termination
 
-    if (un1.toFloat() > 1) {
-      
-      mqttClient.publish("CMTEQ/BATT/Voltage(V) ", un1.c_str());
-      mqttClient.publish("CMTEQ/BATT/Current(A) ", un2.c_str());
-      mqttClient.publish("CMTEQ/BATT/Power(W) ", &POW[0]);
-      mqttClient.publish("CMTEQ/BATT/State ", un3.c_str());
-      delay(50);
+   // Parse the input string
+    if (sscanf(uno, "%9[^,],%9[^,],%9s", un1, un2, un3) == 3) {
+      float voltage = atof(un1);
+      float current = atof(un2);
+      power = voltage * current;
+
+      if(voltage > 1){
+        char powerStr[10];
+        snprintf(powerStr, sizeof(powerStr), "%.2f", power);
+        mqttClient.publish("CMTEQ/BATT/Voltage(V)", un1);
+        mqttClient.publish("CMTEQ/BATT/Current(A)", un2);
+        mqttClient.publish("CMTEQ/BATT/Power(W)", powerStr);
+        mqttClient.publish("CMTEQ/BATT/State", un3);
+        delay(50);
+      }
     }
     Serial.println("Publishing to CMTEQ/BATT/....");
   }
 
-  digitalWrite(LED, HIGH);
-  delay(500);
-  digitalWrite(LED, LOW);
-  delay(500);
+  if (millis() - lastBlinkTime > 500) { // Toggle every 500ms
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState);
+      lastBlinkTime = millis();
+  }
 }
 
 //======================================================
@@ -103,12 +104,19 @@ void loop() {
 //======================================================
 void connectWiFi(){
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  unsigned long startAttemptTime = millis();
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(300);
     Serial.print(".");
+      if (millis() - startAttemptTime > 10000) { // Timeout after 10 seconds
+      Serial.println("Failed to connect to Wi-Fi");
+      return;
+    }
   }
   Serial.println("Connected to Wi-Fi");
-  mqttConnect();
+  //mqttConnect();
 } 
 
 //======================================================
@@ -119,18 +127,24 @@ void connectWiFi(){
 void mqttConnect(){
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(callback);
+  int retryCount = 0;
 
-  while (!client.connected()) {
+  while (!client.connected() && retryCount < 5) { // Retry 5 times
+    Serial.println("Attempting to connect to MQTT broker...");
     if (mqttClient.connect(mqtt_client_id)) {
       Serial.println("Connected to MQTT broker");
+      mqttClient.subscribe(TOPIC);
+      return;
     } else {
       Serial.println("Failed with state ");
       Serial.println(mqttClient.state());
+      retryCount++;
       delay(2000);
     }
   }
-  ESP.wdtFeed(); // "Feed" the watchdog to prevent reset
-  mqttClient.subscribe(TOPIC);
+  if (!mqttClient.connected()) {
+      Serial.println("MQTT connection failed after 5 attempts.");
+  }
 }
 
 //======================================================
@@ -139,22 +153,18 @@ void mqttConnect(){
 //
 //======================================================
 void callback(char *topic, byte *payload, unsigned int length) {
-  payload[length] = '\0';
+  if (length >= 50) { // Check for oversized payload
+      Serial.println("Payload too large, ignoring");
+      return;
+  }
+  payload[length] = '\0'; // Null-terminate payload
   String strTopic = String(topic);
-  int lastForwardSlash = strTopic.lastIndexOf('/');
-  String strSubTopic = strTopic.substring(lastForwardSlash + 1, strTopic.length());
   String value = String((char *)payload);
 
-  if (value.equals("true")) {
+  if(value.equals("true")) {
     flagEnableRelay1 = true;
-    //value = 1;
-    Serial.println(strSubTopic + ":" + value);
-  }
-
-  if (value == "false") {
+  }else if(value == "false") {
     flagEnableRelay1 = false;
-    //value = 0;
-    Serial.println(strSubTopic + ":" + value);
   }
-  //Serial.println(topic);
+  Serial.println(strTopic + ": " + value);
 }
